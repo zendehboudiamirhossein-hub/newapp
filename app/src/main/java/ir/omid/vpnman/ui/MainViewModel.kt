@@ -326,8 +326,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     private fun observeConfigRefreshOnConnect() {
         viewModelScope.launch {
+            // VpnStateStore.state is itself a StateFlow, which already only emits when its
+            // value actually changes — applying distinctUntilChanged() directly to a
+            // StateFlow is redundant (and errors at compile time on this coroutines
+            // version), so we just collect it as-is.
             VpnStateStore.state
-                .distinctUntilChanged()
                 .collect { state ->
                     if (state == ConnectionState.CONNECTED) {
                         refresh(userInitiated = false, silent = true)
@@ -340,4 +343,3 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         const val MAX_AUTO_FAILOVER_ATTEMPTS = 2
     }
 }
-
