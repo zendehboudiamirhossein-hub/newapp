@@ -34,7 +34,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ChevronRight
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -102,6 +102,7 @@ import ir.omid.vpnman.model.VpnServer
 import ir.omid.vpnman.util.fa
 import ir.omid.vpnman.vpn.VpnStateStore
 import kotlinx.coroutines.delay
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -742,7 +743,7 @@ private fun ServerCard(server: VpnServer?, latency: Int?, onClick: () -> Unit) {
             }
             Spacer(Modifier.width(4.dp))
             Icon(
-                Icons.AutoMirrored.Rounded.ChevronRight,
+                Icons.AutoMirrored.Rounded.KeyboardArrowRight,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(22.dp)
