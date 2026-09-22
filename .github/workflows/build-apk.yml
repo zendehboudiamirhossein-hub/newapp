@@ -1,0 +1,89 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Validate app settings
+        env:
+          VPN_API_BASE_URL: ${{ secrets.VPN_API_BASE_URL }}
+          VPN_APP_API_KEY: ${{ secrets.VPN_APP_API_KEY }}
+        run: |
+          if [ -z "$VPN_API_BASE_URL" ]; then
+            echo "::error::Secret VPN_API_BASE_URL is missing"
+            exit 1
+          fi
+          if [ -z "$VPN_APP_API_KEY" ]; then
+            echo "::error::Secret VPN_APP_API_KEY is missing"
+            exit 1
+          fi
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          set -e
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -type f -name sdkmanager | head -n 1)"
+          fi
+          if [ -z "$SDKMANAGER" ] || [ ! -x "$SDKMANAGER" ]; then
+            echo "::error::sdkmanager was not found under $ANDROID_SDK_ROOT"
+            exit 1
+          fi
+          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Prepare slim Xray core and Vazirmatn
+        run: bash scripts/prepare-deps.sh
+
+      - name: Build arm64 debug APK
+        env:
+          ORG_GRADLE_PROJECT_VPN_API_BASE_URL: ${{ secrets.VPN_API_BASE_URL }}
+          ORG_GRADLE_PROJECT_VPN_APP_API_KEY: ${{ secrets.VPN_APP_API_KEY }}
+        run: gradle :app:assembleDebug --stacktrace
+
+      - name: Prepare artifact
+        run: |
+          mkdir -p output
+          cp app/build/outputs/apk/debug/app-debug.apk "output/VPN-Man-v1.0.2-arm64.apk"
+          sha256sum "output/VPN-Man-v1.0.2-arm64.apk" > "output/SHA256.txt"
+          du -h "output/VPN-Man-v1.0.2-arm64.apk"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: VPN-Man-Android-v1.0.2-arm64
+          path: output/
+          if-no-files-found: error
+          retention-days: 30
