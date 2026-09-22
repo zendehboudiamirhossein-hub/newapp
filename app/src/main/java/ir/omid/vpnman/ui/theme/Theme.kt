@@ -32,17 +32,20 @@ import androidx.compose.ui.unit.sp
 //      (and re-add `import ir.omid.vpnman.R`).
 private val Vazir = FontFamily.Default
 
+// Brightened for readability: background/surfaces lifted a few steps so cards and dividers
+// separate clearly from the page, and onSurfaceVariant (used for nearly all secondary/label
+// text throughout the app) raised well above the old low-contrast gray-blue.
 private val Colors = darkColorScheme(
-    primary = androidx.compose.ui.graphics.Color(0xFF7DE3C3),
+    primary = androidx.compose.ui.graphics.Color(0xFF8CEBCC),
     onPrimary = androidx.compose.ui.graphics.Color(0xFF07110E),
-    secondary = androidx.compose.ui.graphics.Color(0xFF8FA7FF),
-    background = androidx.compose.ui.graphics.Color(0xFF080B14),
-    surface = androidx.compose.ui.graphics.Color(0xFF101725),
-    surfaceVariant = androidx.compose.ui.graphics.Color(0xFF151E2F),
-    onBackground = androidx.compose.ui.graphics.Color(0xFFF3F7FB),
-    onSurface = androidx.compose.ui.graphics.Color(0xFFF3F7FB),
-    onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFFA9B4C4),
-    error = androidx.compose.ui.graphics.Color(0xFFFF7E86)
+    secondary = androidx.compose.ui.graphics.Color(0xFFA3B7FF),
+    background = androidx.compose.ui.graphics.Color(0xFF10151F),
+    surface = androidx.compose.ui.graphics.Color(0xFF1A2333),
+    surfaceVariant = androidx.compose.ui.graphics.Color(0xFF232E42),
+    onBackground = androidx.compose.ui.graphics.Color(0xFFFFFFFF),
+    onSurface = androidx.compose.ui.graphics.Color(0xFFFFFFFF),
+    onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFFCBD4E3),
+    error = androidx.compose.ui.graphics.Color(0xFFFF8B92)
 )
 
 private val AppTypography = Typography(
