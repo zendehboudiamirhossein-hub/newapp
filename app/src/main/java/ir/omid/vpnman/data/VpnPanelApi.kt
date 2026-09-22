@@ -16,11 +16,65 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
+/** Result of asking the admin panel whether this device is currently allowed to connect. */
+sealed class AccessCheckResult {
+    /** Panel confirmed the device is not blocked. */
+    object Allowed : AccessCheckResult()
+    /** Panel explicitly reported this device as blocked by the admin. */
+    data class Blocked(val message: String) : AccessCheckResult()
+    /** Could not get a clear answer from the panel (network/server issue). */
+    data class Error(val message: String) : AccessCheckResult()
+}
+
 class VpnPanelApi {
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
         .build()
+
+    /**
+     * Asks the admin panel, right now, whether this device is blocked — meant to be called
+     * once immediately before every connection attempt so a device banned mid-session can't
+     * keep reconnecting. Reuses manifest.php, which already carries the panel's block check
+     * (a 403 with error "device_blocked"), instead of requiring a second server-side endpoint.
+     */
+    suspend fun checkAccess(context: Context): AccessCheckResult = withContext(Dispatchers.IO) {
+        if (BuildConfig.VPN_API_BASE_URL.isBlank() || BuildConfig.VPN_APP_API_KEY.isBlank()) {
+            return@withContext AccessCheckResult.Error("آدرس یا کلید API تنظیم نشده است")
+        }
+        try {
+            val url = BuildConfig.VPN_API_BASE_URL.trimEnd('/') + "/api/v1/manifest.php"
+            val request = Request.Builder()
+                .url(url)
+                .header("X-App-Key", BuildConfig.VPN_APP_API_KEY)
+                .header("X-Device-Id", DeviceInfo.deviceId(context))
+                .header("X-Device-Model", DeviceInfo.model())
+                .header("X-Device-Manufacturer", DeviceInfo.manufacturer())
+                .header("X-Android-Version", DeviceInfo.androidVersion())
+                .header("X-App-Version", BuildConfig.VERSION_NAME)
+                .header("Accept", "application/json")
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    val err = runCatching { JSONObject(body).optString("error") }.getOrNull()
+                    return@withContext if (response.code == 403 && err == "device_blocked") {
+                        AccessCheckResult.Blocked("دسترسی این دستگاه توسط مدیر مسدود شده است")
+                    } else {
+                        AccessCheckResult.Error("خطای سرور: ${response.code}")
+                    }
+                }
+                val root = JSONObject(body)
+                if (!root.optBoolean("ok", false)) {
+                    return@withContext AccessCheckResult.Error(root.optString("error", "پاسخ نامعتبر سرور"))
+                }
+                AccessCheckResult.Allowed
+            }
+        } catch (e: Exception) {
+            AccessCheckResult.Error(e.message ?: "خطا در ارتباط با سرور")
+        }
+    }
 
     suspend fun fetchManifest(context: Context): Result<ManifestPayload> = withContext(Dispatchers.IO) {
         runCatching {
