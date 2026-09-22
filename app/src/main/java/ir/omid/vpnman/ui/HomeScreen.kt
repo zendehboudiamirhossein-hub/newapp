@@ -34,7 +34,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -102,7 +102,6 @@ import ir.omid.vpnman.model.VpnServer
 import ir.omid.vpnman.util.fa
 import ir.omid.vpnman.vpn.VpnStateStore
 import kotlinx.coroutines.delay
-import androidx.compose.material.icons.rounded.ArrowForward
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -759,7 +758,7 @@ private fun ServerCard(server: VpnServer?, latency: Int?, onClick: () -> Unit) {
             }
             Spacer(Modifier.width(4.dp))
             Icon(
-                Icons.Rounded.ArrowForward,
+                Icons.Rounded.ChevronRight,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(22.dp)
@@ -855,8 +854,8 @@ private fun ErrorCard(text: String) {
                         .fillMaxWidth()
                         .background(Color(0x66130A0D), RoundedCornerShape(12.dp))
                         .padding(10.dp),
-                    color = Color(0xFFFFC8CE),
-                    fontSize = 11.sp,
+                    color = Color(0xFFFFD9DE),
+                    fontSize = 12.sp,
                     textAlign = TextAlign.Start
                 )
             }
@@ -952,7 +951,7 @@ private fun ServerList(
                             .border(1.dp, protoColor.copy(alpha = 0.35f), RoundedCornerShape(12.dp)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(protocolShort(server.protocol), fontWeight = FontWeight.Bold, fontSize = 12.sp, color = protoColor)
+                        Text(protocolShort(server.protocol), fontWeight = FontWeight.Bold, fontSize = 13.sp, color = protoColor)
                     }
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
@@ -1192,3 +1191,4 @@ private fun isNewerVersion(required: String, current: String): Boolean {
     }
     return false
 }
+
