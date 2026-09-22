@@ -34,7 +34,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowForward
+import androidx.compose.material.icons.automirrored.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -168,7 +168,7 @@ fun HomeScreen(
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    listOf(Color(0xFF050812), Color(0xFF0A1020), Color(0xFF070A12))
+                    listOf(Color(0xFF10151F), Color(0xFF161F30), Color(0xFF10151F))
                 )
             )
     ) {
@@ -187,6 +187,10 @@ fun HomeScreen(
                     onRefresh = { viewModel.refresh(true) },
                     onAbout = { showAbout = true }
                 )
+                if (ui.blockedMessage != null) {
+                    Spacer(Modifier.height(12.dp))
+                    BlockedBanner(ui.blockedMessage!!)
+                }
                 Spacer(Modifier.height(if (compact) 18.dp else 26.dp))
 
                 if (ui.loading) {
@@ -216,24 +220,36 @@ fun HomeScreen(
                     Spacer(Modifier.height(if (compact) 12.dp else 20.dp))
                     PowerButton(
                         state = connection,
-                        enabled = selected != null,
+                        enabled = selected != null && !ui.checkingAccess,
                         compact = compact,
                         onClick = {
                             if (connection == ConnectionState.CONNECTED || connection == ConnectionState.CONNECTING) {
                                 onDisconnect()
                             } else if (selected != null) {
-                                viewModel.onConnectAttemptStarted()
-                                val ad = viewModel.pickPreConnectAd()
-                                if (ad != null) {
-                                    adServer = selected
-                                    pendingAd = ad
-                                    viewModel.reportAdImpression(ad)
-                                } else {
-                                    onConnect(selected)
+                                // Check once with the admin panel whether this device is blocked
+                                // before doing anything else; only proceed into the ad/connect
+                                // flow if the panel didn't say "blocked".
+                                viewModel.requestConnect(selected) {
+                                    val ad = viewModel.pickPreConnectAd()
+                                    if (ad != null) {
+                                        adServer = selected
+                                        pendingAd = ad
+                                        viewModel.reportAdImpression(ad)
+                                    } else {
+                                        onConnect(selected)
+                                    }
                                 }
                             }
                         }
                     )
+                    if (ui.checkingAccess) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "در حال بررسی وضعیت دسترسی…",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
                     Spacer(Modifier.height(if (compact) 8.dp else 16.dp))
                     Text(
                         when (connection) {
@@ -279,7 +295,7 @@ fun HomeScreen(
         ModalBottomSheet(
             onDismissRequest = { showServers = false },
             sheetState = sheetState,
-            containerColor = Color(0xFF0D1422)
+            containerColor = Color(0xFF1A2333)
         ) {
             ServerList(
                 servers = ui.servers,
@@ -315,7 +331,7 @@ fun HomeScreen(
         Dialog(onDismissRequest = { showAbout = false }) {
             Surface(
                 shape = RoundedCornerShape(28.dp),
-                color = Color(0xFF111A2B),
+                color = Color(0xFF1D2739),
                 border = BorderStroke(1.dp, Color(0xFF243352))
             ) {
                 Column(Modifier.padding(26.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -341,7 +357,7 @@ fun HomeScreen(
                     Text(stringResource(R.string.app_name), style = MaterialTheme.typography.headlineSmall)
                     Text("نسخه ${BuildConfig.VERSION_NAME}", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(16.dp))
-                    HorizontalDivider(color = Color(0xFF202A3D))
+                    HorizontalDivider(color = Color(0xFF34405A))
                     Spacer(Modifier.height(14.dp))
                     listOf(
                         "اتصال رمزنگاری‌شده با هسته Xray",
@@ -546,7 +562,7 @@ private fun ConnectionStatus(state: ConnectionState) {
         ConnectionState.CONNECTED -> Color(0xFF62E6BD)
         ConnectionState.CONNECTING, ConnectionState.DISCONNECTING -> Color(0xFF8EB6FF)
         ConnectionState.ERROR -> Color(0xFFFF8793)
-        else -> Color(0xFF8B96AA)
+        else -> Color(0xFFB6C0D4)
     }
     val statusBackground = when (state) {
         ConnectionState.CONNECTED -> Color(0x2229D6A3)
@@ -742,7 +758,7 @@ private fun ServerCard(server: VpnServer?, latency: Int?, onClick: () -> Unit) {
             }
             Spacer(Modifier.width(4.dp))
             Icon(
-                Icons.Rounded.ArrowForward,
+                Icons.AutoMirrored.Rounded.ChevronRight,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(22.dp)
@@ -773,6 +789,26 @@ private fun SignalBars(ms: Int) {
                         RoundedCornerShape(1.dp)
                     )
             )
+        }
+    }
+}
+
+/** Prominent top-of-screen banner shown when the admin panel reports this device as blocked. */
+@Composable
+private fun BlockedBanner(message: String) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = Color(0xFF3A141E),
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, Color(0xFFFF7E8D))
+    ) {
+        Row(
+            Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Rounded.ErrorOutline, contentDescription = null, tint = Color(0xFFFF9AA4), modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(10.dp))
+            Text(message, color = Color.White, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }
@@ -891,7 +927,7 @@ private fun ServerList(
             }
         }
         Spacer(Modifier.height(10.dp))
-        HorizontalDivider(color = Color(0xFF202A3D))
+        HorizontalDivider(color = Color(0xFF34405A))
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 8.dp)) {
             items(servers, key = { it.id }) { server ->
                 val selected = server.id == selectedId
@@ -932,7 +968,7 @@ private fun ServerList(
                         Spacer(Modifier.width(6.dp))
                         Text("${latency.fa()} ms", color = latencyColor(latency), style = MaterialTheme.typography.labelMedium)
                     } else {
-                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 1.5.dp, color = Color(0xFF505E7A))
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 1.5.dp, color = Color(0xFF7E8CA8))
                     }
                     if (selected) {
                         Spacer(Modifier.width(10.dp))
@@ -962,7 +998,7 @@ private fun PreConnectAdDialog(ad: AdItem, onFinished: () -> Unit, onCancel: () 
         Surface(
             modifier = Modifier.fillMaxWidth().padding(20.dp),
             shape = RoundedCornerShape(28.dp),
-            color = Color(0xFF111A2B),
+            color = Color(0xFF1D2739),
             border = BorderStroke(1.dp, Color(0xFF243352))
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -975,7 +1011,7 @@ private fun PreConnectAdDialog(ad: AdItem, onFinished: () -> Unit, onCancel: () 
                             .fillMaxWidth()
                             .height(260.dp)
                             .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
-                            .background(Color(0xFF0B101C))
+                            .background(Color(0xFF141C2B))
                     )
                     Box(
                         Modifier
@@ -1063,8 +1099,8 @@ private fun PostConnectAdBanner(ad: AdItem, onClick: () -> Unit, onDismiss: () -
                 runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(ad.targetUrl))) }
             },
         shape = RoundedCornerShape(18.dp),
-        color = Color(0xFF111A2B),
-        border = BorderStroke(1.dp, Color(0xFF202A3D))
+        color = Color(0xFF1D2739),
+        border = BorderStroke(1.dp, Color(0xFF34405A))
     ) {
         Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
             AsyncImage(
@@ -1074,14 +1110,14 @@ private fun PostConnectAdBanner(ad: AdItem, onClick: () -> Unit, onDismiss: () -
                 modifier = Modifier
                     .size(52.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(Color(0xFF0B101C))
+                    .background(Color(0xFF141C2B))
             )
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         "تبلیغ",
-                        color = Color(0xFF8B96AA),
+                        color = Color(0xFFB6C0D4),
                         style = MaterialTheme.typography.labelMedium,
                         modifier = Modifier
                             .background(Color(0x14FFFFFF), RoundedCornerShape(5.dp))
@@ -1155,3 +1191,4 @@ private fun isNewerVersion(required: String, current: String): Boolean {
     }
     return false
 }
+
