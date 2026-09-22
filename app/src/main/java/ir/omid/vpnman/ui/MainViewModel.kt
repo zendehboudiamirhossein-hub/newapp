@@ -3,6 +3,7 @@ package ir.omid.vpnman.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import ir.omid.vpnman.data.AccessCheckResult
 import ir.omid.vpnman.data.LatencyResult
 import ir.omid.vpnman.data.LatencyTester
 import ir.omid.vpnman.data.VpnPanelApi
@@ -36,7 +37,9 @@ data class HomeUiState(
     val maintenance: Boolean = false,
     val minimumVersion: String = "1.0.0",
     val error: String? = null,
-    val autoPickReason: String? = null
+    val autoPickReason: String? = null,
+    val checkingAccess: Boolean = false,
+    val blockedMessage: String? = null
 ) {
     val selectedServer: VpnServer? get() = servers.firstOrNull { it.id == selectedServerId } ?: servers.firstOrNull()
 }
@@ -116,7 +119,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun select(server: VpnServer) {
         manuallySelected = true
         failedThisSession.clear()
-        _ui.update { it.copy(selectedServerId = server.id, autoPickReason = null) }
+        _ui.update { it.copy(selectedServerId = server.id, autoPickReason = null, blockedMessage = null) }
     }
 
     /**
@@ -133,6 +136,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** Call when the user presses "connect" so a fresh failover budget is granted. */
     fun onConnectAttemptStarted() {
         autoRetriesLeft = MAX_AUTO_FAILOVER_ATTEMPTS
+    }
+
+    /**
+     * Gate for the connect button: checks with the admin panel once whether this device is
+     * currently blocked before doing anything else. If blocked, shows the block error and
+     * never proceeds. If allowed, or if the panel couldn't be reached to answer, grants a
+     * fresh failover budget and invokes [onAllowed] (which the UI uses to continue into the
+     * pre-connect ad step and then the actual VPN connection).
+     */
+    fun requestConnect(server: VpnServer, onAllowed: () -> Unit) {
+        viewModelScope.launch {
+            _ui.update { it.copy(checkingAccess = true, blockedMessage = null, error = null) }
+            val result = api.checkAccess(getApplication())
+            _ui.update { it.copy(checkingAccess = false) }
+            when (result) {
+                is AccessCheckResult.Blocked -> {
+                    _ui.update { it.copy(blockedMessage = result.message) }
+                }
+                is AccessCheckResult.Error -> {
+                    // Couldn't get a clear answer from the panel (e.g. offline) — don't hard-lock
+                    // the user out over a network hiccup; let the connection attempt itself be
+                    // the source of truth, same as before this check existed.
+                    onConnectAttemptStarted()
+                    onAllowed()
+                }
+                AccessCheckResult.Allowed -> {
+                    onConnectAttemptStarted()
+                    onAllowed()
+                }
+            }
+        }
     }
 
     /** Picks one ad at random from the eligible list — rotates between campaigns instead of always the same one. */
@@ -227,3 +261,4 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         const val MAX_AUTO_FAILOVER_ATTEMPTS = 2
     }
 }
+
