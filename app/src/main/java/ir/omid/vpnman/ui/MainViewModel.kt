@@ -9,7 +9,9 @@ import ir.omid.vpnman.data.LatencyTester
 import ir.omid.vpnman.data.VpnPanelApi
 import ir.omid.vpnman.model.AdItem
 import ir.omid.vpnman.model.ConnectionState
+import ir.omid.vpnman.model.ManifestPayload
 import ir.omid.vpnman.model.VpnServer
+import ir.omid.vpnman.util.ManifestCache
 import ir.omid.vpnman.util.PreferredServerStore
 import ir.omid.vpnman.vpn.VpnStateStore
 import kotlinx.coroutines.async
@@ -25,6 +27,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+
+private val SUPPORTED_PROTOCOLS = setOf("vless", "vmess", "trojan", "ss")
 
 data class HomeUiState(
     val loading: Boolean = true,
@@ -65,8 +69,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val autoConnectRequests: SharedFlow<VpnServer> = _autoConnectRequests
 
     init {
-        refresh(false)
+        val cached = ManifestCache.load(getApplication())
+        if (cached != null && cached.servers.isNotEmpty()) {
+            // Fast path: configs are already saved on this device from a previous launch —
+            // show them immediately and only re-measure latency (a handful of quick TCP
+            // probes) instead of waiting on a manifest round-trip before the app is even
+            // usable. The saved config list itself is refreshed for real right after the
+            // next successful connection (see observeConfigRefreshOnConnect below).
+            applyManifestToState(cached, silent = false)
+            testLatencies()
+        } else {
+            // Nothing saved yet (first-ever launch, or the cache was just wiped because
+            // this device got blocked) — there's no working tunnel to refresh through yet,
+            // so this one has to be a real network fetch.
+            refresh(userInitiated = false)
+        }
         observeConnectionFailures()
+        observeConfigRefreshOnConnect()
     }
 
     fun refresh(userInitiated: Boolean = true, silent: Boolean = false) {
@@ -76,53 +95,60 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             api.fetchManifest(getApplication()).fold(
                 onSuccess = { manifest ->
-                    val supported = manifest.servers.filter { it.protocol in setOf("vless", "vmess", "trojan", "ss") }
-                    _ui.update {
-                        it.copy(
-                            loading = false,
-                            refreshing = false,
-                            servers = supported,
-                            // Preselect the last server that actually tested best on this
-                            // device, if it's still in the list, instead of defaulting to
-                            // whatever happens to be first — this is what makes the app feel
-                            // instantly ready on launch, before the fresh latency sweep below
-                            // even starts. The sweep still runs and can override this pick the
-                            // moment it has a better answer.
-                            selectedServerId = it.selectedServerId?.takeIf { id -> supported.any { s -> s.id == id } }
-                                ?: PreferredServerStore.load(getApplication())?.takeIf { id -> supported.any { s -> s.id == id } }
-                                ?: supported.firstOrNull()?.id,
-                            preConnectAds = manifest.preConnectAds,
-                            postConnectAds = manifest.postConnectAds,
-                            maintenance = manifest.maintenance,
-                            minimumVersion = manifest.minimumAppVersion,
-                            error = when {
-                                silent -> it.error
-                                supported.isEmpty() && !manifest.maintenance -> "سرور قابل پشتیبانی پیدا نشد"
-                                else -> null
-                            }
-                        )
-                    }
-                    // A silent background check-in (periodic heartbeat, or the ping right
-                    // after connecting) only needs to tell the panel "this device is still
-                    // here" — it shouldn't re-probe every server's latency in the background
-                    // while the user might be actively connected through one of them.
+                    ManifestCache.save(getApplication(), manifest)
+                    applyManifestToState(manifest, silent)
+                    // A silent background refresh (right after connecting) only needs to
+                    // keep the saved config list current — it shouldn't re-probe every
+                    // server's latency while the user might be actively connected through
+                    // one of them.
                     if (!silent && !manifest.maintenance) testLatencies()
                 },
                 onFailure = { e ->
                     if (!silent) _ui.update { it.copy(loading = false, refreshing = false, error = e.message ?: "خطا در دریافت سرورها") }
-                    // Silent heartbeats fail quietly — a missed background check-in shouldn't
-                    // surface an error banner over an otherwise-working connection.
+                    // Silent refreshes fail quietly — a missed background update shouldn't
+                    // surface an error banner over an otherwise-working connection; the
+                    // previously saved configs simply stay in use.
+                }
+            )
+        }
+    }
+
+    private fun applyManifestToState(manifest: ManifestPayload, silent: Boolean) {
+        val supported = manifest.servers.filter { it.protocol in SUPPORTED_PROTOCOLS }
+        _ui.update {
+            it.copy(
+                loading = false,
+                refreshing = false,
+                servers = supported,
+                // Preselect the last server that actually tested best on this device, if
+                // it's still in the list, instead of defaulting to whatever happens to be
+                // first — this is what makes the app feel instantly ready on launch.
+                selectedServerId = it.selectedServerId?.takeIf { id -> supported.any { s -> s.id == id } }
+                    ?: PreferredServerStore.load(getApplication())?.takeIf { id -> supported.any { s -> s.id == id } }
+                    ?: supported.firstOrNull()?.id,
+                preConnectAds = manifest.preConnectAds,
+                postConnectAds = manifest.postConnectAds,
+                maintenance = manifest.maintenance,
+                minimumVersion = manifest.minimumAppVersion,
+                error = when {
+                    silent -> it.error
+                    supported.isEmpty() && !manifest.maintenance -> "سرور قابل پشتیبانی پیدا نشد"
+                    else -> null
                 }
             )
         }
     }
 
     /**
-     * Lightweight periodic "I'm still here" check-in so the admin panel's online/last-seen
-     * status reflects reality while the app is open, not just the moment it was launched.
-     * Safe to call often: it skips the loading/refresh UI and skips re-testing latencies.
+     * Lightweight periodic "I'm still here" ping so the admin panel's online/last-seen status
+     * reflects reality while the app is open. Reuses the block-check endpoint instead of a
+     * full manifest fetch, so it never touches the saved config list — config refreshes only
+     * happen right after a real VPN connection succeeds (see observeConfigRefreshOnConnect),
+     * since fetching through/after a working tunnel is more reliable than fetching cold.
      */
-    fun heartbeat() = refresh(userInitiated = false, silent = true)
+    fun heartbeat() {
+        viewModelScope.launch { api.checkAccess(getApplication()) }
+    }
 
     fun select(server: VpnServer) {
         manuallySelected = true
@@ -149,9 +175,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * Gate for the connect button: checks with the admin panel once whether this device is
      * currently blocked before doing anything else. If blocked, shows the block error and
-     * never proceeds. If allowed, or if the panel couldn't be reached to answer, grants a
-     * fresh failover budget and invokes [onAllowed] (which the UI uses to continue into the
-     * pre-connect ad step and then the actual VPN connection).
+     * wipes every saved config from the device (so a banned device can't keep using stale
+     * configs offline), and never proceeds. If allowed, or if the panel couldn't be reached
+     * to answer, grants a fresh failover budget and invokes [onAllowed] (which the UI uses
+     * to continue into the pre-connect ad step and then the actual VPN connection).
      */
     fun requestConnect(server: VpnServer, onAllowed: () -> Unit) {
         viewModelScope.launch {
@@ -160,7 +187,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _ui.update { it.copy(checkingAccess = false) }
             when (result) {
                 is AccessCheckResult.Blocked -> {
-                    _ui.update { it.copy(blockedMessage = result.message) }
+                    ManifestCache.clear(getApplication())
+                    manuallySelected = false
+                    failedThisSession.clear()
+                    _ui.update {
+                        it.copy(
+                            blockedMessage = result.message,
+                            servers = emptyList(),
+                            selectedServerId = null,
+                            latencies = emptyMap(),
+                            autoPickReason = null
+                        )
+                    }
                 }
                 is AccessCheckResult.Error -> {
                     // Couldn't get a clear answer from the panel (e.g. offline) — don't hard-lock
@@ -198,13 +236,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 return@launch
             }
 
-            // Previously this waited for every single server to finish (awaitAll) before
-            // touching the UI at all, so on a longer server list the list sat blank/frozen
-            // for the entire sweep even though most results were ready almost instantly.
-            // Now each server's number is pushed to the UI the moment its own probe
-            // completes, and concurrency is raised — safe to do now that each individual
-            // probe is itself parallel and fails fast (see LatencyTester) instead of
-            // holding a slot for up to 3x as long.
+            // Each server's number is pushed to the UI the moment its own probe completes,
+            // instead of waiting for the whole sweep (awaitAll) before showing anything.
             val semaphore = Semaphore(10)
             val results = java.util.concurrent.ConcurrentHashMap<String, LatencyResult>()
 
@@ -281,6 +314,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         )
                     }
                     _autoConnectRequests.emit(nextServer)
+                }
+        }
+    }
+
+    /**
+     * Refreshes the saved config list for real the moment a VPN tunnel actually comes up —
+     * fetching through/right after a working connection is more reliable than fetching cold
+     * over the open network before connecting, which is why config updates are deferred to
+     * this point instead of happening on every app launch.
+     */
+    private fun observeConfigRefreshOnConnect() {
+        viewModelScope.launch {
+            VpnStateStore.state
+                .distinctUntilChanged()
+                .collect { state ->
+                    if (state == ConnectionState.CONNECTED) {
+                        refresh(userInitiated = false, silent = true)
+                    }
                 }
         }
     }
