@@ -3,7 +3,9 @@ package ir.omid.vpnman.data
 import ir.omid.vpnman.model.VpnServer
 import ir.omid.vpnman.util.ServerEndpointParser
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import java.net.InetSocketAddress
 import java.net.Socket
 import kotlin.math.sqrt
@@ -39,29 +41,40 @@ data class LatencyResult(
 
 object LatencyTester {
     private const val PROBES_PER_SERVER = 3
-    private const val CONNECT_TIMEOUT_MS = 2200
+    private const val CONNECT_TIMEOUT_MS = 1500
 
-    /** Runs [PROBES_PER_SERVER] independent TCP connect probes and returns a composite result. */
-    suspend fun measure(server: VpnServer): LatencyResult = withContext(Dispatchers.IO) {
+    /**
+     * Runs [PROBES_PER_SERVER] TCP connect probes *concurrently* per server.
+     *
+     * These used to run one after another (`repeat`), so a single slow or dead
+     * server could take up to PROBES_PER_SERVER × CONNECT_TIMEOUT_MS just on its
+     * own — with a couple dozen servers in the list that added real, noticeable
+     * seconds to every refresh. Running the 3 probes in parallel means each
+     * server now costs at most one timeout window, and the timeout itself was
+     * trimmed from 2200ms to 1500ms (still generous for a real TCP handshake)
+     * so dead endpoints get written off faster too.
+     */
+    suspend fun measure(server: VpnServer): LatencyResult = coroutineScope {
         val endpoint = ServerEndpointParser.parse(server.config)
-            ?: return@withContext LatencyResult(null, null, 0.0, 0, 0)
+            ?: return@coroutineScope LatencyResult(null, null, 0.0, 0, 0)
 
-        val samples = mutableListOf<Int>()
-        repeat(PROBES_PER_SERVER) {
-            val sample = runCatching {
-                var elapsed = 0L
-                Socket().use { socket ->
-                    elapsed = measureTimeMillis {
-                        socket.connect(InetSocketAddress(endpoint.host, endpoint.port), CONNECT_TIMEOUT_MS)
+        val probes = (1..PROBES_PER_SERVER).map {
+            async(Dispatchers.IO) {
+                runCatching {
+                    var elapsed = 0L
+                    Socket().use { socket ->
+                        elapsed = measureTimeMillis {
+                            socket.connect(InetSocketAddress(endpoint.host, endpoint.port), CONNECT_TIMEOUT_MS)
+                        }
                     }
-                }
-                elapsed.coerceAtMost(9999).toInt()
-            }.getOrNull()
-            if (sample != null) samples += sample
+                    elapsed.coerceAtMost(9999).toInt()
+                }.getOrNull()
+            }
         }
+        val samples = probes.awaitAll().filterNotNull()
 
         if (samples.isEmpty()) {
-            return@withContext LatencyResult(null, null, 0.0, 0, PROBES_PER_SERVER)
+            return@coroutineScope LatencyResult(null, null, 0.0, 0, PROBES_PER_SERVER)
         }
 
         val avg = samples.average()
