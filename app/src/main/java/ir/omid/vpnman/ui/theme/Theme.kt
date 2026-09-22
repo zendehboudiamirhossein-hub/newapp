@@ -34,7 +34,7 @@ private val Vazir = FontFamily.Default
 
 // Brightened for readability: background/surfaces lifted a few steps so cards and dividers
 // separate clearly from the page, and onSurfaceVariant (used for nearly all secondary/label
-// text throughout the app) raised well above the old low-contrast gray-blue.
+// text throughout the app) raised close to white so it stays legible even in bright light.
 private val Colors = darkColorScheme(
     primary = androidx.compose.ui.graphics.Color(0xFF8CEBCC),
     onPrimary = androidx.compose.ui.graphics.Color(0xFF07110E),
@@ -44,19 +44,22 @@ private val Colors = darkColorScheme(
     surfaceVariant = androidx.compose.ui.graphics.Color(0xFF232E42),
     onBackground = androidx.compose.ui.graphics.Color(0xFFFFFFFF),
     onSurface = androidx.compose.ui.graphics.Color(0xFFFFFFFF),
-    onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFFCBD4E3),
+    onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFFE3E9F5),
     error = androidx.compose.ui.graphics.Color(0xFFFF8B92)
 )
 
+// Sizes nudged up a step across the board (and titleMedium given real weight instead of
+// riding on the default) so labels, subtitles and helper text are easier to make out at a
+// glance instead of needing a closer look.
 private val AppTypography = Typography(
     displaySmall = TextStyle(fontFamily = Vazir, fontWeight = FontWeight.Bold, fontSize = 30.sp),
     headlineSmall = TextStyle(fontFamily = Vazir, fontWeight = FontWeight.Bold, fontSize = 22.sp),
     titleLarge = TextStyle(fontFamily = Vazir, fontWeight = FontWeight.Bold, fontSize = 19.sp),
-    titleMedium = TextStyle(fontFamily = Vazir, fontWeight = FontWeight.Medium, fontSize = 16.sp),
-    bodyLarge = TextStyle(fontFamily = Vazir, fontWeight = FontWeight.Normal, fontSize = 15.sp),
-    bodyMedium = TextStyle(fontFamily = Vazir, fontWeight = FontWeight.Normal, fontSize = 13.sp),
-    labelLarge = TextStyle(fontFamily = Vazir, fontWeight = FontWeight.Medium, fontSize = 14.sp),
-    labelMedium = TextStyle(fontFamily = Vazir, fontWeight = FontWeight.Medium, fontSize = 12.sp)
+    titleMedium = TextStyle(fontFamily = Vazir, fontWeight = FontWeight.SemiBold, fontSize = 17.sp),
+    bodyLarge = TextStyle(fontFamily = Vazir, fontWeight = FontWeight.Normal, fontSize = 16.sp),
+    bodyMedium = TextStyle(fontFamily = Vazir, fontWeight = FontWeight.Normal, fontSize = 14.sp),
+    labelLarge = TextStyle(fontFamily = Vazir, fontWeight = FontWeight.Medium, fontSize = 15.sp),
+    labelMedium = TextStyle(fontFamily = Vazir, fontWeight = FontWeight.Medium, fontSize = 13.sp)
 )
 
 @Composable
