@@ -10,6 +10,7 @@ import ir.omid.vpnman.data.VpnPanelApi
 import ir.omid.vpnman.model.AdItem
 import ir.omid.vpnman.model.ConnectionState
 import ir.omid.vpnman.model.VpnServer
+import ir.omid.vpnman.util.PreferredServerStore
 import ir.omid.vpnman.vpn.VpnStateStore
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -81,7 +82,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             loading = false,
                             refreshing = false,
                             servers = supported,
+                            // Preselect the last server that actually tested best on this
+                            // device, if it's still in the list, instead of defaulting to
+                            // whatever happens to be first — this is what makes the app feel
+                            // instantly ready on launch, before the fresh latency sweep below
+                            // even starts. The sweep still runs and can override this pick the
+                            // moment it has a better answer.
                             selectedServerId = it.selectedServerId?.takeIf { id -> supported.any { s -> s.id == id } }
+                                ?: PreferredServerStore.load(getApplication())?.takeIf { id -> supported.any { s -> s.id == id } }
                                 ?: supported.firstOrNull()?.id,
                             preConnectAds = manifest.preConnectAds,
                             postConnectAds = manifest.postConnectAds,
@@ -185,21 +193,41 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _ui.update { it.copy(testingLatencies = true) }
             val servers = _ui.value.servers
-            val semaphore = Semaphore(6)
-            val results = servers.map { server ->
+            if (servers.isEmpty()) {
+                _ui.update { it.copy(testingLatencies = false) }
+                return@launch
+            }
+
+            // Previously this waited for every single server to finish (awaitAll) before
+            // touching the UI at all, so on a longer server list the list sat blank/frozen
+            // for the entire sweep even though most results were ready almost instantly.
+            // Now each server's number is pushed to the UI the moment its own probe
+            // completes, and concurrency is raised — safe to do now that each individual
+            // probe is itself parallel and fails fast (see LatencyTester) instead of
+            // holding a slot for up to 3x as long.
+            val semaphore = Semaphore(10)
+            val results = java.util.concurrent.ConcurrentHashMap<String, LatencyResult>()
+
+            servers.map { server ->
                 async {
-                    semaphore.withPermit { server.id to LatencyTester.measure(server) }
+                    semaphore.withPermit {
+                        val result = LatencyTester.measure(server)
+                        results[server.id] = result
+                        _ui.update { state ->
+                            state.copy(latencies = state.latencies + (server.id to result.displayMs))
+                        }
+                    }
                 }
-            }.awaitAll().toMap()
+            }.awaitAll()
 
             scores = results
             val ranked = rankByScore(results)
             val best = ranked.firstOrNull { it !in failedThisSession }
+            if (best != null) PreferredServerStore.save(getApplication(), best)
 
             _ui.update { state ->
                 state.copy(
                     testingLatencies = false,
-                    latencies = results.mapValues { (_, r) -> r.displayMs },
                     selectedServerId = if (!manuallySelected && best != null) best else state.selectedServerId,
                     autoPickReason = if (!manuallySelected && best != null) describePick(results[best]) else state.autoPickReason
                 )
