@@ -43,9 +43,8 @@ object XrayConfigFactory {
                     .put("protocol", "blackhole")
                     // Default blackhole behavior is a silent drop (no response at all),
                     // which looks like a hung/timed-out connection to the client for
-                    // several seconds. An immediate close instead lets IPv6-preferring
-                    // apps and QUIC-attempting browsers fail over to the tunneled IPv4/TCP
-                    // path right away instead of stalling.
+                    // several seconds. An immediate close instead lets QUIC-attempting
+                    // browsers fail over to the tunneled TCP path right away.
                     .put("settings", JSONObject().put("response", JSONObject().put("type", "http")))
             )
         )
@@ -84,21 +83,6 @@ object XrayConfigFactory {
                             .put("type", "field")
                             .put("network", "udp")
                             .put("port", "443")
-                            .put("outboundTag", "block")
-                    )
-                    .put(
-                        // The tun interface now claims the IPv6 default route (see
-                        // MyVpnService) purely to stop IPv6 traffic from leaking out the
-                        // real network unproxied. There's no actual IPv6 upstream on the
-                        // configured server, so any public IPv6 destination is rejected
-                        // here (fast, thanks to the "block" outbound's http response type
-                        // above) rather than tunneled — this is what makes Happy Eyeballs
-                        // fail over to the properly-tunneled IPv4 path almost instantly.
-                        // Private/local IPv6 ranges are excluded since the rule above
-                        // already sent them to "direct".
-                        JSONObject()
-                            .put("type", "field")
-                            .put("ip", JSONArray().put("::/0"))
                             .put("outboundTag", "block")
                     )
             )
