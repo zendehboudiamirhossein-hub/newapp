@@ -72,16 +72,22 @@ class MyVpnService : VpnService() {
                 .addRoute("0.0.0.0", 0)
                 .addDnsServer("1.1.1.1")
                 .addDnsServer("8.8.8.8")
+                // Most Iranian mobile carriers have no real IPv6 uplink at all, but a real
+                // (if smaller) share of users — some fixed/ADSL/fiber ISPs, university and
+                // some Wi-Fi networks — do. Previously IPv6 was left completely unclaimed
+                // on this interface, so any of those users' IPv6-reachable traffic bypassed
+                // the VPN entirely and went out over the real network unencrypted and
+                // unproxied — a real IP/DNS leak, and any site only reachable over IPv6
+                // stayed blocked. Claiming the route here forces the OS to send ALL IPv6
+                // traffic into the tunnel; Xray then rejects it immediately (see
+                // XrayConfigFactory's "::/0" -> block rule, with a fast HTTP-style close
+                // instead of a silent drop) so IPv6-preferring apps fail over to the
+                // properly-tunneled IPv4 path almost instantly instead of leaking or
+                // hanging for several seconds.
+                .addAddress("fd00:6a75:6273:1::1", 64)
+                .addRoute("::", 0)
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) builder.setBlocking(true)
-
-            // NOTE: IPv6 tunneling intentionally left out. addAddress()/addRoute() for
-            // IPv6 succeed even when the underlying mobile network has no real IPv6
-            // uplink (very common on Iranian carriers), which makes Android believe it
-            // has a working IPv6 route. Heavy IPv6-preferring clients (Chrome/Google,
-            // via Happy Eyeballs) then send traffic into that dead route and appear to
-            // "lose internet", while IPv4-only apps are unaffected. Re-enable only
-            // behind a setting once real IPv6 egress on the VPN server is confirmed.
 
             // Exclude this app UID so Xray's own upstream sockets never loop back into the VPN.
             runCatching { builder.addDisallowedApplication(packageName) }
