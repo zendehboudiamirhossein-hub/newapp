@@ -16,15 +16,6 @@ object XrayConfigFactory {
         }
 
         outbound.put("tag", "proxy")
-        // XTLS Vision flow manages the TLS record layer itself and is incompatible with
-        // Xray's mux — everything else (plain VLESS, VMess, Trojan, Shadowsocks) is safe
-        // to multiplex. A browser opens dozens of parallel connections per page load, and
-        // without mux each one pays for a full extra TLS handshake to the proxy server on
-        // top of the destination's own TLS handshake — overhead a normal app with one or
-        // two persistent connections never notices, but that makes a browser feel very slow.
-        if (!raw.contains("xtls-rprx-vision", ignoreCase = true)) {
-            outbound.put("mux", JSONObject().put("enabled", true).put("concurrency", 8))
-        }
 
         val root = JSONObject()
         root.put("log", JSONObject().put("loglevel", "warning"))
@@ -37,55 +28,23 @@ object XrayConfigFactory {
         root.put("outbounds", JSONArray()
             .put(outbound)
             .put(JSONObject().put("tag", "direct").put("protocol", "freedom"))
-            .put(
-                JSONObject()
-                    .put("tag", "block")
-                    .put("protocol", "blackhole")
-                    // Default blackhole behavior is a silent drop (no response at all),
-                    // which looks like a hung/timed-out connection to the client for
-                    // several seconds. An immediate close instead lets QUIC-attempting
-                    // browsers fail over to the tunneled TCP path right away.
-                    .put("settings", JSONObject().put("response", JSONObject().put("type", "http")))
-            )
+            .put(JSONObject().put("tag", "block").put("protocol", "blackhole"))
         )
         root.put("routing", JSONObject()
             .put("domainStrategy", "IPIfNonMatch")
-            .put(
-                "rules",
-                JSONArray()
-                    .put(
-                        JSONObject()
-                            .put("type", "field")
-                            .put(
-                                "ip",
-                                JSONArray()
-                                    .put("10.0.0.0/8")
-                                    .put("172.16.0.0/12")
-                                    .put("192.168.0.0/16")
-                                    .put("127.0.0.0/8")
-                                    .put("::1/128")
-                                    .put("fc00::/7")
-                                    .put("fe80::/10")
-                            )
-                            .put("outboundTag", "direct")
-                    )
-                    .put(
-                        // Chrome and most modern browsers try QUIC/HTTP3 (UDP/443) for the
-                        // bulk of a page's requests before ever falling back to plain
-                        // HTTPS. That UDP traffic only reaches the destination by being
-                        // relayed over this TCP-based tunnel, which defeats the entire
-                        // point of QUIC and behaves far worse than TCP would have — the
-                        // browser sits there stalling on/timing out from QUIC before it
-                        // finally retries over TCP. Blocking UDP/443 here makes browsers
-                        // skip straight to TCP+TLS, which the tunnel handles cleanly.
-                        // Regular apps rarely attempt QUIC at all, so they're unaffected.
-                        JSONObject()
-                            .put("type", "field")
-                            .put("network", "udp")
-                            .put("port", "443")
-                            .put("outboundTag", "block")
-                    )
-            )
+            .put("rules", JSONArray().put(
+                JSONObject()
+                    .put("type", "field")
+                    .put("ip", JSONArray()
+                        .put("10.0.0.0/8")
+                        .put("172.16.0.0/12")
+                        .put("192.168.0.0/16")
+                        .put("127.0.0.0/8")
+                        .put("::1/128")
+                        .put("fc00::/7")
+                        .put("fe80::/10"))
+                    .put("outboundTag", "direct")
+            ))
         )
         return root.toString()
     }
