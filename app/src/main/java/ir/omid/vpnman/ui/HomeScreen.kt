@@ -221,6 +221,7 @@ fun HomeScreen(
                     PowerButton(
                         state = connection,
                         enabled = selected != null && !ui.checkingAccess,
+                        checking = ui.checkingAccess,
                         compact = compact,
                         onClick = {
                             if (connection == ConnectionState.CONNECTED || connection == ConnectionState.CONNECTING) {
@@ -612,8 +613,12 @@ private fun ConnectionStatus(state: ConnectionState) {
 }
 
 @Composable
-private fun PowerButton(state: ConnectionState, enabled: Boolean, compact: Boolean, onClick: () -> Unit) {
-    val busy = state == ConnectionState.CONNECTING || state == ConnectionState.DISCONNECTING
+private fun PowerButton(state: ConnectionState, enabled: Boolean, checking: Boolean = false, compact: Boolean, onClick: () -> Unit) {
+    // Checking device-block status with the panel happens before the real connection even
+    // starts (state is still DISCONNECTED at that point), so it's treated the same as the
+    // CONNECTING/DISCONNECTING "busy" state here — same comet-sweep ring, same pulsing halo —
+    // so the button visibly reacts the instant it's pressed instead of just going gray.
+    val busy = state == ConnectionState.CONNECTING || state == ConnectionState.DISCONNECTING || checking
     val connected = state == ConnectionState.CONNECTED
     val error = state == ConnectionState.ERROR
     val buttonScale by animateFloatAsState(
