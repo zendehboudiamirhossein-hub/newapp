@@ -32,19 +32,19 @@ import androidx.compose.ui.unit.sp
 //      (and re-add `import ir.omid.vpnman.R`).
 private val Vazir = FontFamily.Default
 
-// Brightened for readability: background/surfaces lifted a few steps so cards and dividers
-// separate clearly from the page, and onSurfaceVariant (used for nearly all secondary/label
-// text throughout the app) raised close to white so it stays legible even in bright light.
+// Brightened for readability: background/surfaces lifted further so cards and dividers
+// separate clearly from the page even in bright light, and onSurfaceVariant (used for
+// nearly all secondary/label text throughout the app) kept close to white.
 private val Colors = darkColorScheme(
     primary = androidx.compose.ui.graphics.Color(0xFF8CEBCC),
     onPrimary = androidx.compose.ui.graphics.Color(0xFF07110E),
     secondary = androidx.compose.ui.graphics.Color(0xFFA3B7FF),
-    background = androidx.compose.ui.graphics.Color(0xFF10151F),
-    surface = androidx.compose.ui.graphics.Color(0xFF1A2333),
-    surfaceVariant = androidx.compose.ui.graphics.Color(0xFF232E42),
+    background = androidx.compose.ui.graphics.Color(0xFF161E2C),
+    surface = androidx.compose.ui.graphics.Color(0xFF222E44),
+    surfaceVariant = androidx.compose.ui.graphics.Color(0xFF2B3852),
     onBackground = androidx.compose.ui.graphics.Color(0xFFFFFFFF),
     onSurface = androidx.compose.ui.graphics.Color(0xFFFFFFFF),
-    onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFFE3E9F5),
+    onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFFE9EEF9),
     error = androidx.compose.ui.graphics.Color(0xFFFF8B92)
 )
 
