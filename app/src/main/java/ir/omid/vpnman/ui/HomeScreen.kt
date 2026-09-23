@@ -265,7 +265,12 @@ fun HomeScreen(
                         style = MaterialTheme.typography.bodyLarge
                     )
                     Spacer(Modifier.height(if (compact) 14.dp else 24.dp))
-                    ServerCard(selected, ui.latencies[selected?.id], onClick = { showServers = true })
+                    ServerCard(
+                        selected,
+                        ui.latencies[selected?.id],
+                        failed = selected != null && ui.latencies.containsKey(selected.id) && ui.latencies[selected.id] == null,
+                        onClick = { showServers = true }
+                    )
                     if (!ui.testingLatencies && ui.autoPickReason != null && connection != ConnectionState.CONNECTED) {
                         Spacer(Modifier.height(6.dp))
                         Text(
@@ -721,7 +726,7 @@ private fun PowerButton(state: ConnectionState, enabled: Boolean, checking: Bool
 }
 
 @Composable
-private fun ServerCard(server: VpnServer?, latency: Int?, onClick: () -> Unit) {
+private fun ServerCard(server: VpnServer?, latency: Int?, failed: Boolean = false, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
@@ -760,6 +765,8 @@ private fun ServerCard(server: VpnServer?, latency: Int?, onClick: () -> Unit) {
                     Spacer(Modifier.width(6.dp))
                     Text("${latency.fa()} ms", color = latencyColor(latency), style = MaterialTheme.typography.labelMedium)
                 }
+            } else if (failed) {
+                Text("ناموفق", color = Color(0xFFFF7E86), style = MaterialTheme.typography.labelMedium)
             }
             Spacer(Modifier.width(4.dp))
             Icon(
@@ -777,8 +784,8 @@ private fun ServerCard(server: VpnServer?, latency: Int?, onClick: () -> Unit) {
 @Composable
 private fun SignalBars(ms: Int) {
     val filled = when {
-        ms < 120 -> 3
-        ms < 250 -> 2
+        ms < 500 -> 3
+        ms < 1000 -> 2
         else -> 1
     }
     val color = latencyColor(ms)
@@ -972,6 +979,9 @@ private fun ServerList(
                         SignalBars(ms = latency)
                         Spacer(Modifier.width(6.dp))
                         Text("${latency.fa()} ms", color = latencyColor(latency), style = MaterialTheme.typography.labelMedium)
+                    } else if (latencies.containsKey(server.id)) {
+                        // Tested and the config did not work end to end.
+                        Text("ناموفق", color = Color(0xFFFF7E86), style = MaterialTheme.typography.labelMedium)
                     } else {
                         CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 1.5.dp, color = Color(0xFF7E8CA8))
                     }
@@ -1179,9 +1189,10 @@ private fun protocolColor(value: String) = when (value.lowercase()) {
     else -> Color(0xFFB9C6DD)
 }
 
+// Thresholds are for *real* delay (proxy handshake + HTTPS round trip), not a bare TCP ping.
 private fun latencyColor(ms: Int) = when {
-    ms < 120 -> Color(0xFF7DE3C3)
-    ms < 250 -> Color(0xFFFFD166)
+    ms < 500 -> Color(0xFF7DE3C3)
+    ms < 1000 -> Color(0xFFFFD166)
     else -> Color(0xFFFF7E86)
 }
 
