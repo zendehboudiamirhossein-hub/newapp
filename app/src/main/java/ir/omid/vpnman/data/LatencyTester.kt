@@ -1,24 +1,33 @@
 package ir.omid.vpnman.data
 
+import android.content.Context
+import android.util.Log
+import go.Seq
 import ir.omid.vpnman.model.VpnServer
 import ir.omid.vpnman.util.ServerEndpointParser
+import ir.omid.vpnman.vpn.XrayConfigFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withContext
+import libv2ray.Libv2ray
+import java.lang.reflect.Method
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.math.sqrt
 import kotlin.system.measureTimeMillis
 
 /**
- * Result of probing a single server multiple times.
+ * Result of probing a single server.
  *
- * [displayMs] is what the UI should show (best single probe — closest to what a
- * user actually experiences once the connection is warm), while [score] is what
- * auto-selection should sort by: it folds in jitter and packet loss so a server
- * that is fast-but-flaky doesn't beat one that is slightly slower but rock solid.
- * Lower score is always better; a server with zero successful probes has no score.
+ * [displayMs] is what the UI shows (best single probe), while [score] is what
+ * auto-selection sorts by: it folds in jitter and probe failures so a server that
+ * is fast-but-flaky doesn't beat one that is slightly slower but rock solid.
+ * Lower score is always better; a server with zero successful probes has no score
+ * (and is shown as failed in the UI).
  */
 data class LatencyResult(
     val displayMs: Int?,
@@ -32,65 +41,135 @@ data class LatencyResult(
     val score: Double?
         get() {
             if (successCount == 0 || avgMs == null) return null
-            // Every dropped probe costs as much as ~150ms of extra latency, and jitter
-            // (instability) is weighted 2x since a wobbly server ruins streaming/calls
-            // even when its average looks fine.
-            return avgMs + jitterMs * 2.0 + packetLoss * 150.0
+            return avgMs + jitterMs * 2.0 + packetLoss * 400.0
         }
 }
 
+/**
+ * Measures how long a server *really* takes to carry traffic.
+ *
+ * The old implementation only opened a TCP socket to the server's host:port. That
+ * proves something is listening, not that the config works: CDN-fronted servers
+ * (Cloudflare etc.) accept TCP on 443 even when the config behind them is dead,
+ * and so do many filtered/expired nodes — so broken configs got a nice ping.
+ *
+ * Now a probe is a two-stage check:
+ *  1. Fast TCP pre-check — if nothing answers at all, the server is dead and we
+ *     don't waste a full Xray start-up on it.
+ *  2. Real delay test — Xray is started in-process with just this server's outbound
+ *     and an HTTPS request to [TEST_URL] is sent *through* it (same approach as
+ *     v2rayNG's "real delay"). Bad UUID/password, wrong SNI/REALITY key, blocked
+ *     handshake, dead upstream… all make this fail, so the server gets no ping.
+ *
+ * Because the number now includes the proxy + TLS handshake and a full HTTP round
+ * trip, it's larger than a bare TCP ping (typically a few hundred ms) — the UI
+ * thresholds were adjusted accordingly.
+ */
 object LatencyTester {
-    private const val PROBES_PER_SERVER = 3
-    private const val CONNECT_TIMEOUT_MS = 1500
+    private const val TAG = "LatencyTester"
+    private const val TEST_URL = "https://www.gstatic.com/generate_204"
 
-    /**
-     * Runs [PROBES_PER_SERVER] TCP connect probes *concurrently* per server.
-     *
-     * These used to run one after another (`repeat`), so a single slow or dead
-     * server could take up to PROBES_PER_SERVER × CONNECT_TIMEOUT_MS just on its
-     * own — with a couple dozen servers in the list that added real, noticeable
-     * seconds to every refresh. Running the 3 probes in parallel means each
-     * server now costs at most one timeout window, and the timeout itself was
-     * trimmed from 2200ms to 1500ms (still generous for a real TCP handshake)
-     * so dead endpoints get written off faster too.
-     */
-    suspend fun measure(server: VpnServer): LatencyResult = coroutineScope {
+    private const val TCP_PROBES = 2
+    private const val TCP_TIMEOUT_MS = 2500
+    private const val REAL_PROBES = 2
+    private const val REAL_TIMEOUT_MS = 7000L
+
+    private val executor = Executors.newCachedThreadPool { r ->
+        Thread(r, "latency-probe").apply { isDaemon = true }
+    }
+
+    @Volatile private var coreReady = false
+
+    // Looked up reflectively so a different libv2ray build without this method
+    // degrades to the TCP-only check instead of breaking the whole build.
+    private val measureMethod: Method? by lazy {
+        runCatching {
+            Class.forName("libv2ray.Libv2ray")
+                .getMethod("measureOutboundDelay", String::class.java, String::class.java)
+        }.onFailure { Log.w(TAG, "measureOutboundDelay not available: $it") }.getOrNull()
+    }
+
+    /** Must run before the first [measure]: the core needs its env set up even when the VPN service isn't running yet. */
+    @Synchronized
+    fun init(context: Context) {
+        if (coreReady) return
+        runCatching {
+            Seq.setContext(context.applicationContext)
+            Libv2ray.initCoreEnv(context.filesDir.absolutePath, "")
+            coreReady = true
+        }.onFailure { Log.w(TAG, "core init failed: $it") }
+    }
+
+    suspend fun measure(server: VpnServer): LatencyResult = withContext(Dispatchers.IO) {
         val endpoint = ServerEndpointParser.parse(server.config)
-            ?: return@coroutineScope LatencyResult(null, null, 0.0, 0, 0)
+            ?: return@withContext failed(0)
 
-        val probes = (1..PROBES_PER_SERVER).map {
+        // Stage 1: is anything even listening?
+        val tcpSamples = tcpProbes(endpoint)
+        if (tcpSamples.isEmpty()) return@withContext failed(TCP_PROBES)
+
+        // Stage 2: does the config actually work end to end?
+        val method = measureMethod
+        if (!coreReady || method == null) {
+            // Can't do a real test on this build — fall back to the TCP result.
+            return@withContext summarize(tcpSamples, TCP_PROBES)
+        }
+        val testConfig = runCatching { XrayConfigFactory.buildForTest(server.config) }.getOrNull()
+            ?: return@withContext failed(REAL_PROBES)
+
+        val samples = mutableListOf<Int>()
+        for (i in 0 until REAL_PROBES) {
+            val ms = realProbe(method, testConfig)
+            if (ms == null) break // a dead config won't get better; don't burn more time on it
+            samples += ms
+        }
+        if (samples.isEmpty()) failed(REAL_PROBES) else summarize(samples, REAL_PROBES)
+    }
+
+    private suspend fun tcpProbes(endpoint: ServerEndpointParser.Endpoint): List<Int> = coroutineScope {
+        (1..TCP_PROBES).map {
             async(Dispatchers.IO) {
                 runCatching {
                     var elapsed = 0L
                     Socket().use { socket ->
                         elapsed = measureTimeMillis {
-                            socket.connect(InetSocketAddress(endpoint.host, endpoint.port), CONNECT_TIMEOUT_MS)
+                            socket.connect(InetSocketAddress(endpoint.host, endpoint.port), TCP_TIMEOUT_MS)
                         }
                     }
                     elapsed.coerceAtMost(9999).toInt()
                 }.getOrNull()
             }
-        }
-        val samples = probes.awaitAll().filterNotNull()
+        }.awaitAll().filterNotNull()
+    }
 
-        if (samples.isEmpty()) {
-            return@coroutineScope LatencyResult(null, null, 0.0, 0, PROBES_PER_SERVER)
+    /** One request through the proxy. The native call can't be cancelled, so it runs on its own thread with a hard timeout. */
+    private fun realProbe(method: Method, config: String): Int? {
+        val future = executor.submit<Long> { method.invoke(null, config, TEST_URL) as Long }
+        return try {
+            future.get(REAL_TIMEOUT_MS, TimeUnit.MILLISECONDS).toInt()
+                .takeIf { it > 0 }?.coerceAtMost(9999)
+        } catch (t: Throwable) {
+            future.cancel(true)
+            null
         }
+    }
 
+    private fun failed(attempts: Int) = LatencyResult(null, null, 0.0, 0, attempts)
+
+    private fun summarize(samples: List<Int>, attempts: Int): LatencyResult {
         val avg = samples.average()
         val jitter = if (samples.size > 1) {
             sqrt(samples.sumOf { (it - avg) * (it - avg) } / samples.size)
         } else 0.0
-
-        LatencyResult(
+        return LatencyResult(
             displayMs = samples.min(),
             avgMs = avg,
             jitterMs = jitter,
             successCount = samples.size,
-            attemptCount = PROBES_PER_SERVER
+            attemptCount = attempts
         )
     }
 
-    /** Back-compat single-number probe, kept for any caller that only needs a quick ping. */
+    /** Back-compat single-number probe. */
     suspend fun test(server: VpnServer): Int? = measure(server).displayMs
 }
