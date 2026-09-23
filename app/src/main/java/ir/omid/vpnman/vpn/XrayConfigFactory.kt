@@ -6,7 +6,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 object XrayConfigFactory {
-    fun build(raw: String): String {
+    private fun outboundFor(raw: String): JSONObject {
         val outbound = when {
             raw.startsWith("vless://", true) -> vless(raw)
             raw.startsWith("vmess://", true) -> vmess(raw)
@@ -14,8 +14,27 @@ object XrayConfigFactory {
             raw.startsWith("ss://", true) -> shadowsocks(raw)
             else -> error("این پروتکل در نسخه فعلی اپ پشتیبانی نمی‌شود")
         }
-
         outbound.put("tag", "proxy")
+        return outbound
+    }
+
+    /**
+     * Minimal config used only for the real-delay ping test: no TUN inbound and no
+     * routing, just the server's outbound first (so it's the default one) — the test
+     * must never touch the device's actual VPN interface.
+     */
+    fun buildForTest(raw: String): String {
+        val root = JSONObject()
+        root.put("log", JSONObject().put("loglevel", "none"))
+        root.put("outbounds", JSONArray()
+            .put(outboundFor(raw))
+            .put(JSONObject().put("tag", "direct").put("protocol", "freedom"))
+        )
+        return root.toString()
+    }
+
+    fun build(raw: String): String {
+        val outbound = outboundFor(raw)
 
         val root = JSONObject()
         root.put("log", JSONObject().put("loglevel", "warning"))
