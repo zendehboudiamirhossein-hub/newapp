@@ -168,7 +168,7 @@ fun HomeScreen(
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    listOf(Color(0xFF10151F), Color(0xFF161F30), Color(0xFF10151F))
+                    listOf(Color(0xFF161E2C), Color(0xFF1D2A42), Color(0xFF161E2C))
                 )
             )
     ) {
@@ -296,7 +296,7 @@ fun HomeScreen(
         ModalBottomSheet(
             onDismissRequest = { showServers = false },
             sheetState = sheetState,
-            containerColor = Color(0xFF1A2333)
+            containerColor = Color(0xFF222E44)
         ) {
             ServerList(
                 servers = ui.servers,
@@ -332,8 +332,8 @@ fun HomeScreen(
         Dialog(onDismissRequest = { showAbout = false }) {
             Surface(
                 shape = RoundedCornerShape(28.dp),
-                color = Color(0xFF1D2739),
-                border = BorderStroke(1.dp, Color(0xFF243352))
+                color = Color(0xFF29354E),
+                border = BorderStroke(1.dp, Color(0xFF2E4064))
             ) {
                 Column(Modifier.padding(26.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Box(
@@ -358,7 +358,7 @@ fun HomeScreen(
                     Text(stringResource(R.string.app_name), style = MaterialTheme.typography.headlineSmall)
                     Text("نسخه ${BuildConfig.VERSION_NAME}", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(16.dp))
-                    HorizontalDivider(color = Color(0xFF34405A))
+                    HorizontalDivider(color = Color(0xFF445576))
                     Spacer(Modifier.height(14.dp))
                     listOf(
                         "اتصال رمزنگاری‌شده با هسته Xray",
@@ -563,7 +563,7 @@ private fun ConnectionStatus(state: ConnectionState) {
         ConnectionState.CONNECTED -> Color(0xFF62E6BD)
         ConnectionState.CONNECTING, ConnectionState.DISCONNECTING -> Color(0xFF8EB6FF)
         ConnectionState.ERROR -> Color(0xFFFF8793)
-        else -> Color(0xFFB6C0D4)
+        else -> Color(0xFFDDE4F2)
     }
     val statusBackground = when (state) {
         ConnectionState.CONNECTED -> Color(0x2229D6A3)
@@ -725,7 +725,7 @@ private fun ServerCard(server: VpnServer?, latency: Int?, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
-        color = Color(0xD9121A2A),
+        color = Color(0xE61B2538),
         shape = RoundedCornerShape(24.dp),
         border = BorderStroke(1.dp, Color(0xFF26334A))
     ) {
@@ -932,7 +932,7 @@ private fun ServerList(
             }
         }
         Spacer(Modifier.height(10.dp))
-        HorizontalDivider(color = Color(0xFF34405A))
+        HorizontalDivider(color = Color(0xFF445576))
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 8.dp)) {
             items(servers, key = { it.id }) { server ->
                 val selected = server.id == selectedId
@@ -1003,8 +1003,8 @@ private fun PreConnectAdDialog(ad: AdItem, onFinished: () -> Unit, onCancel: () 
         Surface(
             modifier = Modifier.fillMaxWidth().padding(20.dp),
             shape = RoundedCornerShape(28.dp),
-            color = Color(0xFF1D2739),
-            border = BorderStroke(1.dp, Color(0xFF243352))
+            color = Color(0xFF29354E),
+            border = BorderStroke(1.dp, Color(0xFF2E4064))
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Box(Modifier.fillMaxWidth()) {
@@ -1016,7 +1016,7 @@ private fun PreConnectAdDialog(ad: AdItem, onFinished: () -> Unit, onCancel: () 
                             .fillMaxWidth()
                             .height(260.dp)
                             .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
-                            .background(Color(0xFF141C2B))
+                            .background(Color(0xFF1D293E))
                     )
                     Box(
                         Modifier
@@ -1104,8 +1104,8 @@ private fun PostConnectAdBanner(ad: AdItem, onClick: () -> Unit, onDismiss: () -
                 runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(ad.targetUrl))) }
             },
         shape = RoundedCornerShape(18.dp),
-        color = Color(0xFF1D2739),
-        border = BorderStroke(1.dp, Color(0xFF34405A))
+        color = Color(0xFF29354E),
+        border = BorderStroke(1.dp, Color(0xFF445576))
     ) {
         Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
             AsyncImage(
@@ -1115,14 +1115,14 @@ private fun PostConnectAdBanner(ad: AdItem, onClick: () -> Unit, onDismiss: () -
                 modifier = Modifier
                     .size(52.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(Color(0xFF141C2B))
+                    .background(Color(0xFF1D293E))
             )
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         "تبلیغ",
-                        color = Color(0xFFB6C0D4),
+                        color = Color(0xFFDDE4F2),
                         style = MaterialTheme.typography.labelMedium,
                         modifier = Modifier
                             .background(Color(0x14FFFFFF), RoundedCornerShape(5.dp))
