@@ -14,6 +14,7 @@ import ir.omid.vpnman.model.VpnServer
 import ir.omid.vpnman.util.ManifestCache
 import ir.omid.vpnman.util.PreferredServerStore
 import ir.omid.vpnman.vpn.VpnStateStore
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -27,6 +28,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 
 private val SUPPORTED_PROTOCOLS = setOf("vless", "vmess", "trojan", "ss")
 
@@ -229,16 +231,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun testLatencies() {
         viewModelScope.launch {
-            _ui.update { it.copy(testingLatencies = true) }
+            // Wipe old numbers so a server that has since died can't keep showing a stale ping.
+            _ui.update { it.copy(testingLatencies = true, latencies = emptyMap()) }
             val servers = _ui.value.servers
             if (servers.isEmpty()) {
                 _ui.update { it.copy(testingLatencies = false) }
                 return@launch
             }
+            withContext(Dispatchers.IO) { LatencyTester.init(getApplication()) }
 
             // Each server's number is pushed to the UI the moment its own probe completes,
             // instead of waiting for the whole sweep (awaitAll) before showing anything.
-            val semaphore = Semaphore(10)
+            val semaphore = Semaphore(4)
             val results = java.util.concurrent.ConcurrentHashMap<String, LatencyResult>()
 
             servers.map { server ->
