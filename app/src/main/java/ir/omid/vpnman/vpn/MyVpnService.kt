@@ -72,20 +72,15 @@ class MyVpnService : VpnService() {
                 .addRoute("0.0.0.0", 0)
                 .addDnsServer("1.1.1.1")
                 .addDnsServer("8.8.8.8")
-                // Most Iranian mobile carriers have no real IPv6 uplink at all, but a real
-                // (if smaller) share of users — some fixed/ADSL/fiber ISPs, university and
-                // some Wi-Fi networks — do. Previously IPv6 was left completely unclaimed
-                // on this interface, so any of those users' IPv6-reachable traffic bypassed
-                // the VPN entirely and went out over the real network unencrypted and
-                // unproxied — a real IP/DNS leak, and any site only reachable over IPv6
-                // stayed blocked. Claiming the route here forces the OS to send ALL IPv6
-                // traffic into the tunnel; Xray then rejects it immediately (see
-                // XrayConfigFactory's "::/0" -> block rule, with a fast HTTP-style close
-                // instead of a silent drop) so IPv6-preferring apps fail over to the
-                // properly-tunneled IPv4 path almost instantly instead of leaking or
-                // hanging for several seconds.
-                .addAddress("fd00:6a75:6273:1::1", 64)
-                .addRoute("::", 0)
+
+            // NOTE: IPv6 tunneling intentionally left out. An attempt to claim the IPv6
+            // route here (addAddress + addRoute("::", 0)) broke real-device connections
+            // outright — establish() either failed or produced a tunnel that didn't pass
+            // traffic on at least one tested device/network combo. Most Iranian mobile
+            // carriers have no real IPv6 uplink anyway, so the leak risk this reintroduces
+            // is narrow (mainly some fixed/ADSL/fiber ISPs and Wi-Fi networks). Re-enable
+            // only after it's verified working end-to-end on a real device, not just a
+            // successful Gradle build.
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) builder.setBlocking(true)
 
